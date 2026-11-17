@@ -4,9 +4,13 @@
 shows up as a pixel creature on a sweeping radar, labelled with the name
 they linked from X.
 
-![radar](screenshots/radar-picked.png)
+![radar](screenshots/radar-names.png)
 
-Pick someone with UP/DOWN and the card on the right shows:
+Everyone's first name sits under their creature (or beside it when under is
+taken). When the room is too packed, the tags that don't fit are left out
+rather than piled on top of each other, nearest people first, at most 8.
+Pick someone with UP/DOWN to see their full name on the radar, and a card on
+the right with:
 
 - their X name
 - their @handle
@@ -120,7 +124,7 @@ There are 15 original 10×10 species in 8 colourways, plus a rare shiny
 |---|---|
 | `main.lua` | the app (the only code that runs on the badge) |
 | `app.json` | store manifest: id, name, version, permissions |
-| `test.lua` | 73 checks against a mocked badge API (`lua test.lua`) |
+| `test.lua` | 83 checks against a mocked badge API (`lua test.lua`) |
 | `deploy.py` | upload, run, drive and screenshot over USB serial |
 | `setup.sh` | one-time host setup |
 | `AGENTS.md` | instructions for AI coding agents |
@@ -131,8 +135,8 @@ There are 15 original 10×10 species in 8 colourways, plus a rare shiny
 | | Used | Limit |
 |---|---|---|
 | VM instructions per poll | ~51k | 200k |
-| VM instructions per radar frame | ~29k | 200k |
-| UI objects | 14 | 128 |
+| VM instructions per radar frame | ~45k | 200k |
+| UI objects | 28 | 128 |
 | Timers | 1 | 8 |
 
 ## Gotchas learned on real hardware

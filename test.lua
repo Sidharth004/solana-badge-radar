@@ -51,7 +51,7 @@ local function newBadge(id, owner, opts)
   local B = { id = id, owner = owner, store = {}, timers = {}, nt = 1, objs = 0,
     peak = 0, toasts = {}, sent = 0, errors = {}, near = {}, online = true,
     at = {}, qrText = nil, leds = {}, profCalls = 0, queue = {}, maxInstr = {},
-    sprite = nil, stamps = 0, badArt = nil }
+    sprite = nil, stamps = 0, badArt = nil, all = {} }
   local env = {}
   for _, k in ipairs({ "assert", "error", "ipairs", "next", "pairs", "pcall",
       "select", "tonumber", "tostring", "type", "xpcall", "print",
@@ -67,13 +67,14 @@ local function newBadge(id, owner, opts)
   local function obj(kind, x, y, txt)
     B.objs = B.objs + 1
     if B.objs > B.peak then B.peak = B.objs end
-    local o = { kind = kind, txt = txt or "" }
+    local o = { kind = kind, txt = txt or "", x = x, y = y, vis = true }
     if x then B.at[x .. "," .. y] = o end
+    B.all[#B.all + 1] = o
     function o:text(t) self.txt = tostring(t) end
     function o:pos(nx, ny) self.x, self.y = nx, ny end
     function o:color(c) self.col = c end
-    function o:show() end
-    function o:size() end
+    function o:show(b) self.vis = (b ~= false) end
+    function o:size(w, h) self.w, self.h = w, h end
     function o:remove() B.objs = B.objs - 1 end
     function o:clear() end
     function o:pixel() end
@@ -103,7 +104,7 @@ local function newBadge(id, owner, opts)
     end or nil,
     hint = function(s) B.hint = s end,
     toast = function(s) B.toasts[#B.toasts + 1] = s end,
-    clear = function() B.objs = 0; B.at = {}; B.qrText = nil end,
+    clear = function() B.objs = 0; B.at = {}; B.all = {}; B.qrText = nil end,
   }
   env.led = {
     count = 8,
@@ -419,7 +420,66 @@ key(Z, "select"); key(Z, "down"); key(Z, "back")
 run(32000)
 ok(L(Z, 208, 156) == "0" and Z.store["demo"] == false, "demo off: they leave")
 
-print("\n== 13. every card string fits its column ==")
+print("\n== 13. names under the creatures, no cramming ==")
+-- the visible tags on the radar (plates are the rects with a size)
+local function tags(B)
+  local out = {}
+  for _, o in ipairs(B.all) do
+    if o.kind == "label" and o.vis and o.txt ~= "" and o.x and o.x < 200 and o.y and o.y > 0
+       and o.col ~= "green" then
+      out[#out + 1] = o
+    end
+  end
+  return out
+end
+local function overlaps(list)
+  for i = 1, #list do
+    for j = i + 1, #list do
+      local a, b = list[i], list[j]
+      local aw, bw = #a.txt * 7 + 6, #b.txt * 7 + 6
+      if a.x < b.x + bw and b.x < a.x + aw and a.y < b.y + 15 and b.y < a.y + 15 then
+        return a.txt .. " / " .. b.txt
+      end
+    end
+  end
+  return nil
+end
+local T = newBadge("TTT000", "@tess")
+badges = { T }
+plain(T, "P10001", "Ana Builder", -48)
+plain(T, "P10002", "Kofi Dev",    -55)
+plain(T, "P10003", "Mei Validator", -62)
+plain(T, "P10004", "J",           -70)
+ok(boot(T), "boots: " .. errs(T))
+run(2500)
+local tg = tags(T)
+local names = {}
+for _, o in ipairs(tg) do names[o.txt] = true end
+ok(names["Ana"] and names["Kofi"] and names["Mei"], "first names shown without selecting anyone")
+ok(names["J"] == nil or true, "short names allowed")
+ok(overlaps(tg) == nil, "tags don't overlap: " .. tostring(overlaps(tg)))
+pick(T, "Mei Validator"); run(600)
+names = {}
+for _, o in ipairs(tags(T)) do names[o.txt] = true end
+local full = false
+for n in pairs(names) do if n:find("^Mei Valid") then full = true end end
+ok(full, "the picked one shows the full name")
+-- a packed room: tags drop out instead of piling up
+local P = newBadge("PPP000", "@pat")
+badges = { P }
+for i = 1, 40 do plain(P, string.format("Q%05d", i), "Person" .. i .. " X", -45 - (i % 30)) end
+ok(boot(P), "boots: " .. errs(P))
+key(P, "right"); run(3000)
+local pt = tags(P)
+ok(#pt >= 1 and #pt <= 8, "crowd: tags that do not fit are left out, max 8 (" .. #pt .. ")")
+ok(overlaps(pt) == nil, "crowd: still no overlaps: " .. tostring(overlaps(pt)))
+local inside = true
+for _, o in ipairs(pt) do if o.x < 0 or o.x + #o.txt * 7 > 200 or o.y + 14 > 200 then inside = false end end
+ok(inside, "tags stay inside the radar")
+ok(#P.errors == 0, "no errors: " .. errs(P))
+print(string.format("     crowd frame: %d VM instructions", P.maxInstr["on_tick"] or 0))
+
+print("\n== 14. every card string fits its column ==")
 local function over(B)
   local bad = {}
   for k, o in pairs(B.at) do

@@ -1,5 +1,5 @@
 --==========================================================================
---  RADAR                                       Solana OS badge app, v1.2.0
+--  RADAR                                       Solana OS badge app, v1.3.0
 --  Who is around you at Breakpoint: a sweeping radar with a pixel creature
 --  for each person, labelled with the name they linked from X.
 --
@@ -213,7 +213,6 @@ local S = {
   dirty    = true,
   hint     = nil,
   shown    = nil,    -- whose creature the card shows
-  callTxt  = nil,
   prof     = {},
   demo     = DEMO or storage.get("demo") == true,
   profBusy = false,
@@ -475,32 +474,110 @@ local function box(c, x0, y0, x1, y1, col)
   c:line(x1, y0, x1, y1, col)
 end
 
-local function callout(x, y)
-  local l = W.callout
-  if not l then return end
-  local plate = W.plate
-  if not x then
-    if S.callTxt ~= "" then
-      l:text(""); S.callTxt = ""
-      if plate then plate:show(false) end
-    end
-    return
+-- Name tags. Everyone on the radar gets a short name (first word of their
+-- X name) under their creature, or above it if under is taken. A tag that
+-- would overlap another tag, a creature or the edge is left out rather than
+-- crammed in, nearest people first; the one you picked always gets theirs,
+-- in full and highlighted.
+local MAX_TAGS = 8
+local TAG_H = 15
+local C_PLATE, C_PLATE_SEL = 0x020A07, 0x0F4A33
+
+local function tagText(id, t, full)
+  local pf = S.prof[id]
+  local nm = (pf and pf.xn) or t.name
+  if full then return trunc(nm, 12) end
+  if t.tagSrc ~= nm then
+    t.tagSrc = nm
+    local first = string.match(nm, "^(%S+)") or nm
+    if #first < 3 then first = nm end          -- "DJ", "Al" read better whole
+    t.tag = trunc(first, 8)
   end
-  local t = S.track[S.sel]
-  local txt = t and trunc(t.name, 12) or ""
-  if txt ~= S.callTxt then l:text(txt); S.callTxt = txt end
-  local sx, sy = x * 2, y * 2
-  local tw = #txt * 7
-  local lx = sx - tw // 2
-  if lx < 0 then lx = 0 end
-  if lx + tw > 200 then lx = 200 - tw end
-  local ly = sy + 14                     -- under the creature
-  if ly > 184 then ly = sy - 30 end      -- or above it, near the bottom
-  l:pos(lx, ly)
-  if plate then                          -- a dark plate keeps the name legible
-    plate:pos(lx - 3, ly - 1)
-    plate:size(tw + 6, 16)
-    plate:show(txt ~= "")
+  return t.tag
+end
+
+local placed = { n = 0 }
+local function hits(x0, y0, x1, y1)
+  for q = 1, placed.n, 4 do
+    if x0 < placed[q + 2] and x1 > placed[q] and y0 < placed[q + 3] and y1 > placed[q + 1] then
+      return true
+    end
+  end
+  return false
+end
+local function reserve(x0, y0, x1, y1)
+  local n = placed.n
+  placed[n + 1], placed[n + 2], placed[n + 3], placed[n + 4] = x0, y0, x1, y1
+  placed.n = n + 4
+end
+
+-- pos: creature centres in screen px, as {id, x, y, ...} triples
+local function placeTags(pos, npos)
+  if not W.tags then return end
+  placed.n = 0
+  reserve(0, 0, 92, 18)                         -- the zoom label
+  for q = 1, npos * 3, 3 do                     -- every creature, and you
+    local x, y = pos[q + 1], pos[q + 2]
+    reserve(x - 11, y - 11, x + 10, y + 10)
+  end
+  reserve(89, 89, 110, 110)
+  -- the picked one first, then nearest first (pos is already in that order)
+  local order, no = {}, 0
+  for q = 1, npos * 3, 3 do
+    if pos[q] == S.sel then no = no + 1; order[no] = q end
+  end
+  for q = 1, npos * 3, 3 do
+    if pos[q] ~= S.sel then no = no + 1; order[no] = q end
+  end
+  local used = 0
+  for oi = 1, no do
+    if used >= MAX_TAGS then break end
+    local q = order[oi]
+    local id, x, y = pos[q], pos[q + 1], pos[q + 2]
+    local t = S.track[id]
+    if t then
+      local sel = id == S.sel
+      local txt = tagText(id, t, sel)
+      local w = #txt * 7 + 6
+      -- under, over, right of, left of the creature; last time's spot first
+      local cx = x - w // 2
+      if cx < 1 then cx = 1 elseif cx + w > 199 then cx = 199 - w end
+      local mid = y - TAG_H // 2
+      local spots = { cx, y + 11, cx, y - 11 - TAG_H, x + 12, mid, x - 12 - w, mid }
+      local pref = t.tside or 1
+      local lx, ly = nil, nil
+      for k = 0, 3 do
+        local si = (pref - 1 + k) % 4 + 1
+        local sx, sy = spots[si * 2 - 1], spots[si * 2]
+        if sx >= 1 and sx + w <= 199 and sy >= 0 and sy + TAG_H <= 200
+           and not hits(sx, sy, sx + w, sy + TAG_H) then
+          lx, ly, t.tside = sx, sy, si
+          break
+        end
+      end
+      if ly then
+        reserve(lx - 2, ly - 1, lx + w + 2, ly + TAG_H + 1)
+        used = used + 1
+        local tg = W.tags[used]
+        if tg.txt ~= txt then tg.l:text(txt); tg.txt = txt end
+        if tg.x ~= lx or tg.y ~= ly then
+          tg.l:pos(lx + 3, ly + 1)
+          tg.p:pos(lx, ly)
+          tg.x, tg.y = lx, ly
+        end
+        if tg.w ~= w then tg.p:size(w, TAG_H); tg.w = w end
+        if tg.sel ~= sel then
+          tg.sel = sel
+          tg.l:color(sel and "text" or "dim")
+          tg.p:color(sel and C_PLATE_SEL or C_PLATE)
+        end
+        if not tg.on then tg.l:show(true); tg.p:show(true); tg.on = true end
+      end
+    end
+  end
+  for k = used + 1, MAX_TAGS do
+    local tg = W.tags[k]
+    if tg.on then tg.l:show(false); tg.p:show(false); tg.on = false end
   end
 end
 
@@ -533,6 +610,7 @@ local function drawRadar(now)
   end
 
   local selX, selY
+  local pos, npos = {}, 0
   for i = 1, #S.vis do
     local id = S.vis[i]
     local t = S.track[id]
@@ -550,6 +628,8 @@ local function drawRadar(now)
         c:pixel(x - 6, y + 5, g); c:pixel(x + 5, y + 5, g)
       end
       if id == S.sel then selX, selY = x, y end
+      pos[npos * 3 + 1], pos[npos * 3 + 2], pos[npos * 3 + 3] = id, x * 2, y * 2
+      npos = npos + 1
     end
   end
 
@@ -557,14 +637,11 @@ local function drawRadar(now)
   local blink = ((now // 350) % 2) == 0
   if S.sel == "me" then
     box(c, CX - 7, CY - 7, CX + 6, CY + 6, blink and C_SEL or C_ME)
-    callout(nil)
   elseif selX then
     box(c, CX - 7, CY - 7, CX + 6, CY + 6, shade(C_ME, 0.5))
     if blink then box(c, selX - 7, selY - 7, selX + 6, selY + 6, C_SEL) end
-    callout(selX, selY)
-  else
-    callout(nil)
   end
+  placeTags(pos, npos)
 end
 
 local function setHint(h)
@@ -618,9 +695,18 @@ local function buildRadar()
     W.nc2 = ui.label(20, 100, "Solana OS 0.5.9+", { size = 14, color = "dim" })
   end
   W.zoom    = ui.label(4, 2, "", { size = 14, color = "green" })
-  W.plate   = ui.rect(0, 0, 1, 1, { color = 0x020A07, radius = 3 })
-  W.plate:show(false)
-  W.callout = ui.label(0, 0, "", { size = 12 })
+  -- name tags: all plates first, then all labels, so text sits on top
+  W.tags = {}
+  for k = 1, MAX_TAGS do
+    local p = ui.rect(0, 0, 1, 1, { color = C_PLATE, radius = 3 })
+    p:show(false)
+    W.tags[k] = { p = p }
+  end
+  for k = 1, MAX_TAGS do
+    local l = ui.label(0, 0, "", { size = 12, color = "dim" })
+    l:show(false)
+    W.tags[k].l = l
+  end
   -- the person you picked
   W.screen  = ui.rect(208, 2, 58, 58, { color = 0x0A1F16, radius = 4 })
   if ui.image then
@@ -634,7 +720,7 @@ local function buildRadar()
   W.k1      = ui.label(208, 142, "AROUND YOU", { size = 12, color = "dim" })
   W.around  = ui.label(208, 156, "0", { size = 20 })
   W.near    = ui.label(208, 184, "", { size = 12, color = "dim" })
-  S.hint, S.shown, S.callTxt = nil, nil, nil
+  S.hint, S.shown = nil, nil
   setHint("UP/DN pick   L/R zoom   SELECT QR")
 end
 
