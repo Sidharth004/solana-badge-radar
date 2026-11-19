@@ -102,6 +102,49 @@ solana.com/breakpoint/badge/profile, then an upload of `main.lua` and
 leave the submission to the human. If the id `badge-radar` is taken, change
 it in **both** `app.json` and `APP_ID` in `main.lua`.
 
+## Current state (v1.3.0)
+
+**Tested:**
+- 83 mock checks pass (`lua test.lua`).
+- Runs on a real badge. Screenshots are in `screenshots/`.
+
+**Radar:**
+- Each person is a pixel creature picked from their badge id, so they look
+  the same on every badge.
+- Their first name from X shows as a tag next to the creature.
+  - A tag goes under the creature, else above, right or left, keeping last
+    time's spot when it can.
+  - A tag that would overlap anything is left out. At most 8 tags show,
+    nearest people first.
+- The person you picked gets the full name, plus a card with their @handle
+  and distance band.
+
+**Card:**
+- No dex numbers or species names; the user asked for X names instead.
+- Your own card shows `badge.owner()` (the X handle). If X isn't linked, it
+  shows "link X /profile".
+
+**Demo mode:**
+- Shows six simulated people (ids `DEMO*`) and a beacon.
+- Turn it on with `deploy.py --demo`, or press DOWN on the QR screen.
+  - The QR-screen toggle is saved in storage.
+  - The `--demo` setting can't be switched off on the badge; redeploy
+    without `--demo`.
+
+**Detection caveat:** a badge only shows up while it's on the mesh, meaning a
+mesh app is open or its Wi-Fi is joined on the event's mesh channel. Away
+from the venue, `mesh peers` hears nothing on any channel. That's expected,
+so use demo mode.
+
+**Not done:**
+- Not yet published to the badge App Store (a human step, see 5).
+- Never tested with two real badges side by side.
+
+**Hardware note:**
+- The owner's badge stopped charging, though it still runs from USB.
+- `info` reads 4794 mV over USB, above any lithium cell's maximum, which
+  points to a loose battery connector or a dead cell, not software.
+
 ## Rules
 
 - Never commit `shots/`, `.venv/` or `__pycache__/`.
